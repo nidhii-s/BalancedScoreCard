@@ -1,5 +1,5 @@
-#ifndef BSC_H
-#define BSC_H
+#ifndef BSCC_H
+#define BSCC_H
 
 #include <stdio.h>
 
@@ -43,17 +43,16 @@ void addPerspectiveIfNotExists(Graph *graph, const char *name);
    Returns -1 if not present. */
 int findPerspective(const Graph *graph, const char *name);
 
-/* Add directed dependency edge from -> to (both names must exist already or be added) */
+/* Add directed dependency edge from -> to */
 void addDependency(Graph *graph, const char *from, const char *to);
 
 /* Print adjacency list of dependencies */
 void showDependencies(const Graph *graph);
 
-/* Add KPI: interactive (prompts user), adds KPI into the BST node's KPI list.
-   It will auto-add the perspective if it didn't exist. */
+/* Add Key Performance Indicator (interactive) */
 void addKPI(Graph *graph);
 
-/* Display all KPIs by traversing the BST (inorder alphabetical) */
+/* Display all Key Performance Indicators by traversing the BST (inorder) */
 void displayKPIs(const Graph *graph);
 
 /* Compute and print KPI performance per KPI (simple list) */
@@ -68,4 +67,4 @@ void displayPerspectives(const Graph *graph);
 /* Free all dynamically allocated KPIs and BST nodes */
 void freeAll(Graph *graph);
 
-#endif /* BSC_H */
+#endif /* BSCC_H */
