@@ -28,6 +28,25 @@ static int strcmp_ci(const char *a, const char *b) {
     return 0;
 }
 
+/* check if a string is all digits (ignoring leading/trailing spaces) */
+static int isAllDigits(const char *s) {
+    if (!s) return 0;
+    while (isspace((unsigned char)*s)) ++s;
+    if (*s == '\0') return 0;
+    while (*s) {
+        if (!isdigit((unsigned char)*s) && !isspace((unsigned char)*s)) return 0;
+        ++s;
+    }
+    return 1;
+}
+
+/* check if string contains any digit */
+static int containsDigit(const char *s) {
+    if (!s) return 0;
+    while (*s) { if (isdigit((unsigned char)*s)) return 1; ++s; }
+    return 0;
+}
+
 /* ---------- BST functions (PersNode) ---------- */
 
 /* create a new BST perspective node */
@@ -174,67 +193,118 @@ void showDependencies(const Graph *graph) {
 
 /* ---------- KPI operations (now per-perspective inside BST) ---------- */
 
-/* interactive addKPI: prompts user for perspective and KPI; auto-creates perspective */
+/* interactive addKPI: prompts user for perspective and KPI; auto-creates perspective
+   only when a non-numeric name is entered (numeric input selects an existing index). */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include "bsc.h"
+
 void addKPI(Graph *graph) {
     if (!graph) return;
 
-    char perspective[MAX_NAME_LEN];
-    char kpiName[MAX_NAME_LEN];
-    char line[128];
-    float target = 0.0f, achieved = 0.0f;
+    printf("\n=== Add New Key Performance Indicator (KPI) ===\n");
 
-    printf("\nEnter Perspective name: ");
+    /* --- Step 1: Display existing perspectives --- */
+    printf("\nExisting Perspectives (count = %d):\n", graph->numNodes);
+    if (graph->numNodes == 0) {
+        printf("  (no perspectives yet — adding a new one will create it)\n");
+    } else {
+        for (int i = 0; i < graph->numNodes; ++i) {
+            printf("  %d. %s\n", i + 1, graph->nodes[i]);
+        }
+    }
+
+    /* --- Step 2: Ask for perspective name --- */
+    char perspective[MAX_NAME_LEN];
+    printf("\nEnter Perspective name (choose by number OR type perspective name): ");
     if (!fgets(perspective, sizeof(perspective), stdin)) return;
     perspective[strcspn(perspective, "\r\n")] = '\0';
-    if (perspective[0] == '\0') { printf("Perspective name cannot be empty.\n"); return; }
 
-    /* ensure perspective exists (mapping + BST) */
-    addPerspectiveIfNotExists(graph, perspective);
-
-    /* find BST node for perspective (case-insensitive) */
-    PersNode *pnode = bst_search_ci(graph->bstRoot, perspective);
-    if (!pnode) {
-        printf("Unexpected error: perspective node not found after insertion.\n");
+    if (perspective[0] == '\0') {
+        printf("Perspective name cannot be empty.\n");
         return;
     }
 
-    printf("Enter KPI name: ");
+    /* --- Step 3: Handle numeric input properly --- */
+    if (isdigit((unsigned char)perspective[0])) {
+        int idx = atoi(perspective);
+        if (idx <= 0 || idx > graph->numNodes) {
+            printf("Invalid number. Please choose a valid perspective number.\n");
+            return;
+        }
+        strcpy(perspective, graph->nodes[idx - 1]);
+    } else {
+        /* Reject digits in perspective names */
+        for (char *p = perspective; *p; ++p) {
+            if (isdigit((unsigned char)*p)) {
+                printf("Perspective names cannot contain digits.\n");
+                return;
+            }
+        }
+        addPerspectiveIfNotExists(graph, perspective);
+    }
+
+    /* --- Step 4: Input KPI details --- */
+    char kpiName[MAX_NAME_LEN];
+    float target, achieved;
+
+    printf("Enter full name of the Key Performance Indicator: ");
     if (!fgets(kpiName, sizeof(kpiName), stdin)) return;
     kpiName[strcspn(kpiName, "\r\n")] = '\0';
-    if (kpiName[0] == '\0') { printf("KPI name cannot be empty.\n"); return; }
-
-    while (1) {
-        printf("Enter target value: ");
-        if (!fgets(line, sizeof(line), stdin)) return;
-        if (sscanf(line, "%f", &target) == 1) break;
-        printf("Invalid input. Please type a numeric value.\n");
-    }
-    while (1) {
-        printf("Enter achieved value: ");
-        if (!fgets(line, sizeof(line), stdin)) return;
-        if (sscanf(line, "%f", &achieved) == 1) break;
-        printf("Invalid input. Please type a numeric value.\n");
+    if (kpiName[0] == '\0') {
+        printf("KPI name cannot be empty.\n");
+        return;
     }
 
-    /* create KPI node and prepend to perspective's list */
-    KPI *k = (KPI*)malloc(sizeof(KPI));
-    if (!k) { perror("malloc"); return; }
-    strncpy(k->name, kpiName, MAX_NAME_LEN-1);
-    k->name[MAX_NAME_LEN-1] = '\0';
-    k->target = target;
-    k->achieved = achieved;
-    k->next = pnode->kpiList;
-    pnode->kpiList = k;
+    printf("Enter Target value (1-100): ");
 
-    printf("KPI added successfully under %s.\n", pnode->name);
+    if (scanf("%f", &target) != 1 || target < 1.0f || target > 100.0f) {
+        printf("Invalid target. Must be between 1 and 100.\n");
+        while (getchar() != '\n');
+        return;
+    }
+
+    printf("Enter Achieved value (can exceed target if performance is high): ");
+    if (scanf("%f", &achieved) != 1 || achieved < 0.0f) {
+        printf("Invalid achieved value.\n");
+        while (getchar() != '\n');
+        return;
+    }
+    while (getchar() != '\n'); // clear buffer
+
+    /* --- Step 5: Add KPI node --- */
+    PersNode *pnode = graph->bstRoot;
+    while (pnode) {
+        int cmp = strcasecmp(perspective, pnode->name);
+        if (cmp == 0) break;
+        else if (cmp < 0) pnode = pnode->left;
+        else pnode = pnode->right;
+    }
+
+    if (!pnode) {
+        printf("Unexpected error: perspective not found.\n");
+        return;
+    }
+
+    KPI *newKPI = (KPI *)malloc(sizeof(KPI));
+    strcpy(newKPI->name, kpiName);
+    newKPI->target = target;
+    newKPI->achieved = achieved;
+    newKPI->next = pnode->kpiList;
+    pnode->kpiList = newKPI;
+
+    printf("\n Key Performance Indicator added successfully under '%s'.\n", perspective);
 }
+
 
 /* display all KPIs by traversing BST inorder and printing each node's KPIs */
 static void printNodeKPIs(PersNode *node, void *ud) {
     (void)ud;
     printf("\nPerspective: %s\n", node->name);
     if (!node->kpiList) {
-        printf("  (No KPIs yet)\n");
+        printf("  (No Key Performance Indicators yet)\n");
         return;
     }
     KPI *t = node->kpiList;
@@ -250,7 +320,7 @@ static void printNodeKPIs(PersNode *node, void *ud) {
 void displayKPIs(const Graph *graph) {
     if (!graph) return;
     if (!graph->bstRoot) {
-        printf("No perspectives / KPIs defined yet.\n");
+        printf("No perspectives / Key Performance Indicators defined yet.\n");
         return;
     }
     bst_inorder(graph->bstRoot, (PersCallback)printNodeKPIs, NULL);
@@ -261,7 +331,7 @@ void generateScorecard(const Graph *graph) {
     if (!graph) return;
     if (!graph->bstRoot) { printf("No data to generate scorecard.\n"); return; }
 
-    printf("\n=== Scorecard (per-KPI performance) ===\n");
+    printf("\n=== Scorecard (per Key Performance Indicator performance) ===\n");
     /* reuse printNodeKPIs which prints KPIs with performance */
     bst_inorder(graph->bstRoot, (PersCallback)printNodeKPIs, NULL);
 }
