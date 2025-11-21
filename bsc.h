@@ -5,6 +5,13 @@
 
 #define MAX_PERSPECTIVES 10
 #define MAX_NAME_LEN 50
+/* --- Add ANSI colour macros --- */
+#define ANSI_RESET   "\x1b[0m"
+#define ANSI_RED     "\x1b[31m"
+#define ANSI_GREEN   "\x1b[32m"
+#define ANSI_YELLOW  "\x1b[33m"   /* amber-ish */
+#define ANSI_BLUE    "\x1b[34m"
+
 
 /* KPI linked list node (stored per-perspective inside BST nodes) */
 typedef struct KPI {

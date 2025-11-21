@@ -311,11 +311,20 @@ static void printNodeKPIs(PersNode *node, void *ud) {
     while (t) {
         float perf = 0.0f;
         if (t->target != 0.0f) perf = (t->achieved / t->target) * 100.0f;
-        printf("  - %s | Target: %.2f | Achieved: %.2f | Performance: %.2f%%\n",
-               t->name, t->target, t->achieved, perf);
+
+        /* choose colour based on perf */
+        const char *col = ANSI_RESET;
+        if (perf > 100.0f) col = ANSI_BLUE;          /* More than 100% */
+        else if (perf >= 80.0f) col = ANSI_GREEN;    /* Meeting expectation */
+        else if (perf >= 20.0f) col = ANSI_YELLOW;   /* Amber (20% - 79.99%) */
+        else col = ANSI_RED;                         /* < 20% */
+
+        printf("  - %s | Target: %.2f | Achieved: %.2f | Performance: %s%.2f%%%s\n",
+               t->name, t->target, t->achieved, col, perf, ANSI_RESET);
         t = t->next;
     }
 }
+
 
 void displayKPIs(const Graph *graph) {
     if (!graph) return;
@@ -386,8 +395,6 @@ static void computeScores(const Graph *graph, float totalPerf[], int count[]) {
         bst_inorder(graph->bstRoot, computeScoresNode, &ctx);
 }
 
-/* Evaluate performance by perspective, compute averages via computeScores,
-   then use graph->adj to show dependency impacts. */
 void evaluatePerformanceWithDependencies(const Graph *graph) {
     if (!graph) return;
     if (!graph->bstRoot || graph->numNodes == 0) {
@@ -395,6 +402,7 @@ void evaluatePerformanceWithDependencies(const Graph *graph) {
         return;
     }
 
+    /* arrays to be filled by computeScores */
     float totalPerf[MAX_PERSPECTIVES];
     int count[MAX_PERSPECTIVES];
 
@@ -402,47 +410,77 @@ void evaluatePerformanceWithDependencies(const Graph *graph) {
 
     /* print averages */
     printf("\n--- Perspective Averages ---\n");
-    float avg[MAX_PERSPECTIVES] = {0.0f};
+    float avg[MAX_PERSPECTIVES];
+    for (int i = 0; i < MAX_PERSPECTIVES; ++i) avg[i] = 0.0f;
+
     int present = 0;
     float overallSum = 0.0f;
     for (int i = 0; i < graph->numNodes; ++i) {
         if (count[i] > 0) {
             avg[i] = totalPerf[i] / (float)count[i];
-            printf("%s: %.2f%%\n", graph->nodes[i], avg[i]);
+
+            const char *col = ANSI_RESET;
+            if (avg[i] > 100.0f) col = ANSI_BLUE;      /* More than 100% */
+            else if (avg[i] >= 80.0f) col = ANSI_GREEN;/* Meeting expectation */
+            else if (avg[i] >= 20.0f) col = ANSI_YELLOW;/* Amber (20% - <80%) */
+            else col = ANSI_RED;                       /* <20% */
+
+            printf("%s: %s%.2f%%%s\n", graph->nodes[i], col, avg[i], ANSI_RESET);
+
             overallSum += avg[i];
             present++;
         } else {
-            printf("%s: (No KPI data)\n", graph->nodes[i]);
             avg[i] = 0.0f;
+            printf("%s: (No KPI data)\n", graph->nodes[i]);
         }
     }
+
     float overall = (present > 0) ? (overallSum / (float)present) : 0.0f;
 
     /* dependency impact analysis */
     printf("\n--- Dependency Impact Analysis ---\n");
+    int anyImpact = 0;
     for (int i = 0; i < graph->numNodes; ++i) {
         for (int j = 0; j < graph->numNodes; ++j) {
             if (graph->adj[i][j] && avg[i] > 0.0f && avg[i] < 80.0f) {
-                printf("Low performance in %s (%.2f%%) may affect %s.\n",
-                       graph->nodes[i], avg[i], graph->nodes[j]);
+                const char *col = (avg[i] < 20.0f) ? ANSI_RED : ANSI_YELLOW;
+                printf("%sLow performance in %s (%.2f%%) may affect %s.%s\n",
+                       col, graph->nodes[i], avg[i], graph->nodes[j], ANSI_RESET);
+                anyImpact = 1;
             }
         }
     }
+    if (!anyImpact) {
+        printf("No dependency impacts detected based on current averages (threshold: < 80%%).\n");
+    }
 
-    /* lowest performer (with KPI data) */
+    /* find lowest performer (among those with KPI data) */
     float min = 1e9f;
     int minIdx = -1;
     for (int i = 0; i < graph->numNodes; ++i) {
-        if (count[i] > 0 && avg[i] < min) { min = avg[i]; minIdx = i; }
+        if (count[i] > 0 && avg[i] < min) {
+            min = avg[i];
+            minIdx = i;
+        }
     }
 
     printf("\nOverall Performance: %.2f%%\n", overall);
-    if (minIdx != -1) printf("Lowest Performing Perspective: %s (%.2f%%)\n", graph->nodes[minIdx], avg[minIdx]);
-    else printf("No perspective had KPI data to determine lowest performer.\n");
+    if (minIdx != -1) {
+        const char *col = ANSI_RESET;
+        if (avg[minIdx] > 100.0f) col = ANSI_BLUE;
+        else if (avg[minIdx] >= 80.0f) col = ANSI_GREEN;
+        else if (avg[minIdx] >= 20.0f) col = ANSI_YELLOW;
+        else col = ANSI_RED;
+        printf("Lowest Performing Perspective: %s (%s%.2f%%%s)\n",
+               graph->nodes[minIdx], col, avg[minIdx], ANSI_RESET);
+    } else {
+        printf("No perspective had KPI data to determine lowest performer.\n");
+    }
 }
 
 /* display numbered list of perspectives using mapping order */
-void displayPerspectives(const Graph *graph) {
+void displayPerspectives(const Graph *graph)
+{
     if (!graph) { printf("(No graph available)\n"); return; }
     printf("\nExisting Perspectives (count = %d):\n", graph->numNodes);
     if (graph->numNodes == 0) { printf("  (no perspectives defined)\n"); return; }
